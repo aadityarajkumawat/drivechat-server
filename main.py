@@ -15,7 +15,9 @@ from llama_index import (
     StorageContext,
     load_index_from_storage,
 )
-import os
+from llama_index.chat_engine.types import ChatMode
+from typing import List
+from llama_index.llms.base import ChatMessage
 from llama_index.llms import OpenAI
 
 
@@ -51,6 +53,22 @@ def chat():
     try:
         body = request.json
         query = body["query"]
+        chat_history: List[ChatMessage] = body["chat_history"]
+        if chat_history is None:
+            chat_history = []
+
+        history = []
+        history.append(
+            ChatMessage(
+                role="system",
+                content="You are an AI assistant that has provided context from users google drive through the google drive API, now you have to answer the users questions based on the context provided to you from the directory's link he uploaded and you that data from the content. Do not ask the user for any links you already the required data",
+            )
+        )
+        for message in chat_history:
+            history.append(
+                ChatMessage(role=message["role"], content=message["content"])
+            )
+
         auth_header = request.headers.get("Authorization", default="")
         user = token_to_user(auth_header)
 
@@ -60,22 +78,26 @@ def chat():
         # load index from directory
         user_id = user["user_id"]
 
+        # load context
+        ctx = ServiceContext.from_defaults(
+            llm=OpenAI(model="gpt-3.5-turbo", temperature=0, max_tokens=256)
+        )
+
         # rebuild storage context
         storage_context = StorageContext.from_defaults(
             persist_dir=f"indices/index-{user_id}"
         )
 
         # load index
-        index = load_index_from_storage(storage_context)
+        index = load_index_from_storage(storage_context, service_context=ctx)
 
-        query_engine = index.as_query_engine(streaming=True, temperature=0)
-        response = query_engine.query(query)
+        chat_engine = index.as_chat_engine(chat_mode=ChatMode.CONTEXT)
+        response_stream = chat_engine.stream_chat(query, history)
 
         def tokens():
-            for tk in response.response_gen:
+            for tk in response_stream.response_gen:
                 yield tk
 
-        # return {"response": response.__str__()}
         return Response(tokens(), mimetype="text/event-stream")
     except Exception as e:
         print(e)
