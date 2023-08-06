@@ -15,6 +15,7 @@ from llama_index import (
     StorageContext,
     load_index_from_storage,
 )
+import os
 from llama_index.llms import OpenAI
 
 
@@ -67,7 +68,7 @@ def chat():
         # load index
         index = load_index_from_storage(storage_context)
 
-        query_engine = index.as_query_engine(streaming=True)
+        query_engine = index.as_query_engine(streaming=True, temperature=0)
         response = query_engine.query(query)
 
         def tokens():
@@ -212,6 +213,7 @@ def index_gdrive():
         index = VectorStoreIndex.from_documents(docs)
 
         # save index to file system
+        # os.rmdir(f"indices/index-{user.id}")
         index.storage_context.persist(persist_dir=f"indices/index-{user.id}")
 
         # delete existing indices
@@ -225,6 +227,7 @@ def index_gdrive():
 
         return {"status": "success"}
     except Exception as e:
+        print(e)
         return {"status": "error", "error": str(e)}
 
 

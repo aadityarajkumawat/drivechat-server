@@ -9,6 +9,8 @@ from llama_index.readers.schema.base import Document
 from PyPDF2 import PdfReader
 from utils import GOOGLE_CLIENT_SECRET, GOOGLE_CLIENT_ID
 import pandas as pd
+import docx
+import requests
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = [
@@ -48,7 +50,7 @@ class GoogleDrive(BaseReader):
             for file in files:
                 print("Reading", file["name"])
                 contents = self.read_file(service, file)
-                print(file["name"], "DONE")
+                print(file["name"], "DONE", contents)
                 documents.append(Document(text=contents))
         except Exception as e:
             raise Exception("Can't load data from Google Drive" + str(e))
@@ -75,6 +77,8 @@ class GoogleDrive(BaseReader):
                 pageSize=40,
                 fields="nextPageToken, files(id, name, webViewLink, mimeType)",
                 q="'{0}' in parents".format(folder_id),
+                # supportsAllDrives=True,
+                # includeItemsFromAllDrives=True,
             )
             .execute()
         )
@@ -194,22 +198,44 @@ class GoogleDrive(BaseReader):
 
         return content
 
+    def read_docx_file_content(self, service, file_id):
+        request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+        downloaded_file = io.BytesIO()
+        downloader = MediaIoBaseDownload(downloaded_file, request)
+        done = False
+        while done is False:
+            status, done = downloader.next_chunk()
+            print("Download %d%%." % int(status.progress() * 100))
+        downloaded_file.seek(0)
+
+        _docx = docx.Document(downloaded_file)
+        content = [p.text for p in _docx.paragraphs]
+        return "\n".join(content) + "\n"
+
     def read_file(self, service, file):
+        print(file)
         if file["mimeType"] == "application/vnd.google-apps.document":
             return self.read_doc_file_content(service, file)
         elif file["mimeType"] == "text/plain":
             return self.read_text_file_content(service, file)
         elif file["mimeType"] == "application/pdf":
             return self.read_pdf_file_content(service, file)
+        # google sheet does not kinda works for now
         elif file["mimeType"] == "application/vnd.google-apps.spreadsheet":
             spreadsheet_id = file["id"]
             range_name = "A1:ZZZ1000"
             print("file", file)
             return self.read_google_sheet(service, spreadsheet_id, range_name)
+        # only reads the first sheet, need a way to read all sheets or ask the user to index the sheet.
         elif (
             file["mimeType"]
             == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ):
             return self.read_excel_file_content(service, file["id"])
+        elif (
+            file["mimeType"]
+            == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ):
+            return self.read_docx_file_content(service, file["id"])
         else:
             return ""
