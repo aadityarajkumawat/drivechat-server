@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, Response
+from flask import Flask, request, render_template, Response, send_from_directory
 from flask_cors import CORS
 from llama_index.readers import Document
 import requests
@@ -46,6 +46,13 @@ def token_to_user(token: str):
 @app.route("/")
 def hello_world():
     return "Hello, World!"
+
+
+@app.route("/indices")
+def indices():
+    args = request.args
+    index = args.get("index", default="1")
+    return send_from_directory("indices", f"index-{index}/docstore.json")
 
 
 @app.route("/chat", methods=["POST"])
